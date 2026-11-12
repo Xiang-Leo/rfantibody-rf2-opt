@@ -82,7 +82,7 @@ class RoseTTAFoldModule(nn.Module):
                 return_raw=False, return_full=False,
                 use_checkpoint=False, p2p_crop=-1, topk_crop=-1, nc_cycle=False, 
                 symmids=None, symmsub=None, symmRs=None, symmmeta=None,
-                striping=None, low_vram=False):
+                striping=None, low_vram=False, return_auxiliary=True):
         if symmids is None:
             symmids = torch.tensor([[0]], device=xyz_prev.device) # C1
         oligo = symmids.shape[0]
@@ -146,39 +146,36 @@ class RoseTTAFoldModule(nn.Module):
             low_vram=low_vram, nc_cycle=nc_cycle
         )
 
-        # get last structure
-        xyzlast = einsum(
-            'blij,blaj->blai',
-            R[-1],
-            xyz_prev-xyz_prev[:,:,1].unsqueeze(-2)
-        ) + T[-1].unsqueeze(-2)
+        if return_raw or return_auxiliary:
+            xyzlast = einsum(
+                'blij,blaj->blai',
+                R[-1],
+                xyz_prev-xyz_prev[:,:,1].unsqueeze(-2)
+            ) + T[-1].unsqueeze(-2)
 
         if return_raw:
             return msa[:,0], pair, state, xyzlast, alpha[-1], None
 
-        # predict masked amino acids
-        logits_aa = self.aa_pred(msa)
+        logits = logits_aa = p_bind = logits_exp = None
+        if return_auxiliary:
+            logits_aa = self.aa_pred(msa)
+            logits = self.c6d_pred(pair)
 
-        # predict distogram & orientograms
-        logits = self.c6d_pred(pair)
-
-        # predict PAE
         logits_pae = self.pae_pred(pair)
 
-        # predict bind/no-bind
-        if self.new_pbind:
-            rbf_feat = rbf(
-                torch.cdist(xyzlast[:,:,1,:], xyzlast[:,:,1,:])
-            )
-            p_bind = self.bind_pred(pair, rbf_feat, state, same_chain)
-        else:
-            p_bind = self.bind_pred(logits_pae, same_chain)
+        if return_auxiliary:
+            if self.new_pbind:
+                rbf_feat = rbf(
+                    torch.cdist(xyzlast[:,:,1,:], xyzlast[:,:,1,:])
+                )
+                p_bind = self.bind_pred(pair, rbf_feat, state, same_chain)
+            else:
+                p_bind = self.bind_pred(logits_pae, same_chain)
 
-        # Predict LDDT
         lddt = self.lddt_pred(state)
 
-        # predict experimentally resolved or not
-        logits_exp = self.exp_pred(msa[:,0], state)
+        if return_auxiliary:
+            logits_exp = self.exp_pred(msa[:,0], state)
 
         # get all intermediate bb structures
         xyz = einsum(

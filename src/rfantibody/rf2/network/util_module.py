@@ -65,19 +65,30 @@ def get_clones(module, N):
 
 class Dropout(nn.Module):
     # Dropout entire row or column
-    def __init__(self, broadcast_dim=None, p_drop=0.15):
+    def __init__(self, broadcast_dim=None, p_drop=0.15, *, skip_identity_math=False):
         super(Dropout, self).__init__()
         # give ones with probability of 1-p_drop / zeros with p_drop
         self.sampler = torch.distributions.bernoulli.Bernoulli(torch.tensor([1-p_drop]))
         self.broadcast_dim=broadcast_dim
         self.p_drop=p_drop
+        self.skip_identity_math = skip_identity_math
     def forward(self, x):
         if not self.training: # no drophead during evaluation mode
             return x
         shape = list(x.shape)
         if not self.broadcast_dim == None:
             shape[self.broadcast_dim] = 1
-        mask = self.sampler.sample(shape).to(x.device).view(shape)
+        mask = self.sampler.sample(shape)
+        # Keep the original RNG draw so later dropout layers see the same stream.
+        if (
+            self.skip_identity_math
+            and self.p_drop == 0.0
+            and x.is_cuda
+            and x.dtype == mask.dtype
+            and not torch.is_grad_enabled()
+        ):
+            return x
+        mask = mask.to(x.device).view(shape)
 
         x = mask * x / (1.0 - self.p_drop)
         return x

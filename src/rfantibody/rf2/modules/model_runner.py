@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from collections import OrderedDict
 
 import torch
@@ -24,10 +25,12 @@ class AbPredictor(Predictor):
         self.conf=conf
         self.preprocess_fn=preprocess_fn
         self.device=device
+        self.skip_auxiliary = os.environ.get("NABLOOP_RF2_SKIP_AUX") == "1"
         #self._update_params_from_checkpoint()        
         super().__init__(self.conf.model.model_weights, self.device, model_param=self.conf.model_param)
         self.return_rmsds=any([var is not None for var in [conf.input.pdb, conf.input.pdb_dir, conf.input.quiver]])
         self.xyz_converter.to(self.device)
+        self.defer_output = os.environ.get("NABLOOP_RF2_DEFER_OUTPUT") == "1"
 
     def __call__(self, pose: Pose, tag: str) -> None:
         """
@@ -61,6 +64,9 @@ class AbPredictor(Predictor):
         msa_prev = pair_prev = None
         mask_prev = network_input["mask_t"][0, :1].clone()
         best_lddt = torch.tensor([-1.0], device=self.device)
+        output_intermediates = self.conf.output.output_intermediates
+        defer_output = self.defer_output and not output_intermediates
+        best_output = None
 
         to_write=OrderedDict()
         print(f"[RF2] Processing: {tag}")
@@ -68,25 +74,46 @@ class AbPredictor(Predictor):
             for i_cycle in range(self.conf.inference.num_recycles + 1):
                 output_i={i:val for i, val in output_i.items() if i in outputs}
                 input_i={**network_input, **output_i}
+                if self.skip_auxiliary:
+                    input_i["return_auxiliary"] = False
 
                 input_i.pop('alpha',None)
                 input_i['xyz_t'] = input_i['xyz_t'].clone()[...,1,:]
 
                 output_i=self._output_dictionary(self.model(**input_i), input_i)
 
-                output_pose_i = pu.pose_from_RF_output(output_i, pose)
-                metrics_i=self._process_output(output_i, output_pose_i, pose)
+                if defer_output:
+                    pred_lddt = self._unbin_plddt(output_i["pred_lddt"].to(self.lddt_bins.device))
+                else:
+                    output_pose_i = pu.pose_from_RF_output(output_i, pose)
+                    metrics_i = self._process_output(output_i, output_pose_i, pose)
+                    pred_lddt = metrics_i["pred_lddt"]
 
-                print(f"[RF2]   Cycle {i_cycle + 1}/{self.conf.inference.num_recycles + 1} - pLDDT: {metrics_i['pred_lddt'].mean():.3f}")
+                mean_lddt = pred_lddt.mean()
+                print(f"[RF2]   Cycle {i_cycle + 1}/{self.conf.inference.num_recycles + 1} - pLDDT: {mean_lddt:.3f}")
 
-                if metrics_i['pred_lddt'].mean() > best_lddt.mean():
-                    best_lddt = metrics_i['pred_lddt']
-                    best_pose = copy.deepcopy(output_pose_i)
-                    best_metrics = copy.deepcopy(metrics_i)
-                    to_write['best'] = {'pose': best_pose, 'metrics': best_metrics}
-                if self.conf.output.output_intermediates:
+                if mean_lddt > best_lddt.mean():
+                    best_lddt = pred_lddt
+                    if defer_output:
+                        # The model produces fresh confidence logits each cycle. Only xyz_prev
+                        # is passed into recycling and needs an independent copy.
+                        best_output = {
+                            "xyz_prev": output_i["xyz_prev"].clone(),
+                            "logits_pae": output_i["logits_pae"],
+                            "pred_lddt": output_i["pred_lddt"],
+                        }
+                    else:
+                        best_pose = copy.deepcopy(output_pose_i)
+                        best_metrics = copy.deepcopy(metrics_i)
+                        to_write['best'] = {'pose': best_pose, 'metrics': best_metrics}
+                if output_intermediates:
                     to_write[i_cycle] = {'pose': output_pose_i, 'metrics': metrics_i}
                 torch.cuda.empty_cache()
+
+            if best_output is not None:
+                best_pose = pu.pose_from_RF_output(best_output, pose)
+                best_metrics = self._process_output(best_output, best_pose, pose)
+                to_write['best'] = {'pose': best_pose, 'metrics': best_metrics}
         print(f"[RF2] Completed: {tag} - Best pLDDT: {best_lddt.mean():.3f}")
         write_output(to_write, tag, self.conf)
 
@@ -139,6 +166,9 @@ class AbPredictor(Predictor):
             get_rmsds(output_pose_i, input_pose, metrics)
         return metrics
 
+    def _unbin_plddt(self, logits: torch.Tensor) -> torch.Tensor:
+        return (nn.Softmax(dim=1)(logits) * self.lddt_bins[None, :, None]).sum(dim=1)
+
     def get_confidence_scores(self, output_i: dict, pose: Pose, metrics: dict) -> None:
         """
         Gets confidence scores from RF2 output.
@@ -149,11 +179,7 @@ class AbPredictor(Predictor):
         pred_lddt = output_i["pred_lddt"].to(device)
         logits_pae = output_i["logits_pae"].to(device)
 
-        pred_lddt = (
-            nn.Softmax(dim=1)(pred_lddt)
-            * self.lddt_bins[None, :, None]
-        )
-        pred_lddt = pred_lddt.sum(dim=1)
+        pred_lddt = self._unbin_plddt(pred_lddt)
         pae = pae_unbin(logits_pae)
         interaction_pae=pae[0, ~pose.same_chain].mean()
         metrics["interaction_pae"] = interaction_pae

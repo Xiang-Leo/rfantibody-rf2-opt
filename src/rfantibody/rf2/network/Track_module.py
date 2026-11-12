@@ -139,8 +139,8 @@ class PairStr2Pair(nn.Module):
 
         self.emb_rbf = nn.Linear(d_rbf, d_pair)
 
-        self.drop_row = Dropout(broadcast_dim=1, p_drop=p_drop)
-        self.drop_col = Dropout(broadcast_dim=2, p_drop=p_drop)
+        self.drop_row = Dropout(broadcast_dim=1, p_drop=p_drop, skip_identity_math=True)
+        self.drop_col = Dropout(broadcast_dim=2, p_drop=p_drop, skip_identity_math=True)
         
         self.tri_mul_out = TriangleMultiplication(d_pair, d_hidden=d_hidden)
         self.tri_mul_in = TriangleMultiplication(d_pair, d_hidden, outgoing=False)
@@ -218,8 +218,6 @@ class PairStr2Pair(nn.Module):
         B,L = pair.shape[:2]
 
         state = self.norm_state(state)
-        left = self.proj_left(state)
-        right = self.proj_right(state)
 
         if strides is None:
             STRIDE = L
@@ -233,6 +231,8 @@ class PairStr2Pair(nn.Module):
             stride_ff_p2p = strides['ff_p2p']
 
         if STRIDE>0 and STRIDE<L:
+            left = self.proj_left(state)
+            right = self.proj_right(state)
             rbf_feat_out = torch.zeros((B,L,L,self.d_pair), device=rbf_feat.device, dtype=rbf_feat.dtype)
             for i in range((L-1)//STRIDE+1):
                 rows = torch.arange(i*STRIDE, min((i+1)*STRIDE, L), device=pair.device)

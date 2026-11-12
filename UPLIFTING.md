@@ -22,4 +22,8 @@ The launcher follows the P4 Route A protocol. Each input record starts a fresh p
 
 P4 measured byte-identical RF2 Quiver output on its short and typical acceptance cases on the same RTX 4090D, with separate processes per candidate. The portable launcher was prepared from that protocol.
 
+On the local `opt/long-2x` branch, add `--se3-exact` to enable the experimental FP32 radial contraction. It replaces two dense SE(3) BMM shapes on the measured edge counts. Other shapes follow the existing path. The candidate process logs how many contractions used each kernel and isolates the Triton cache from model RNG. This setting uses the verified PyTorch `2.3.1+cu118` and Triton `2.3.1` runtime.
+
+On the same RTX 4090 D, the radial contraction experiment took 300.85 seconds for two frozen candidates on an 893-residue target. P4 took 363.64 seconds, and the pinned original took 387.09 seconds. Each candidate completed 11 forwards, and both normalized Quiver records matched the original. This was one timing per configuration.
+
 The `baseline/upstream` branch points to the pristine upstream commit. The `opt/exact` branch contains the source changes and this launcher. The [P4 benchmark summary](benchmarks/p4-summary.json) records input sizes, wall times, and the scope of the comparison. Use `python uplifting/compare_exact.py --help` to compare artifacts after running both versions on the same GPU with the same inputs and settings.

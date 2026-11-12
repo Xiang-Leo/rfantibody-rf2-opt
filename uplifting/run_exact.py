@@ -81,15 +81,18 @@ def environment(gpu):
 
 def predict(work, ordinal, input_kind, input_path, tag, weights, seed, env):
     result = work / "prediction.qv"
-    command = [
-        sys.executable, str(ROOT / "scripts/rf2_predict.py"),
+    command = [sys.executable]
+    if env.get("NABLOOP_RF2_SE3_EXACT") == "1":
+        command.append(str(ROOT / "uplifting/rf2_se3_exact.py"))
+    command.extend([
+        str(ROOT / "scripts/rf2_predict.py"),
         f"input.{input_kind}=${{oc.env:UPLIFTING_RF2_INPUT}}",
         "model.model_weights=${oc.env:UPLIFTING_RF2_WEIGHTS}",
         "output.quiver=prediction.qv", "output.output_intermediates=False",
         "inference.num_recycles=10", "inference.hotspot_show_proportion=0.0",
         "inference.cautious=True", f"+inference.seed={seed}",
         "hydra.job.chdir=False", f"hydra.run.dir=hydra-{ordinal:06d}",
-    ]
+    ])
     # Pass external paths as literal resolver values. This keeps their spaces,
     # commas, or quotes out of Hydra's override grammar.
     subprocess.run(command, cwd=work, check=True, env=env | {
@@ -115,6 +118,8 @@ def run(args):
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     env = environment(args.gpu)
+    if args.se3_exact:
+        env["NABLOOP_RF2_SE3_EXACT"] = "1"
     with tempfile.TemporaryDirectory(prefix=".uplifting-rf2-", dir=args.output.parent) as directory:
         work = Path(directory)
         combined = work / "combined.qv"
@@ -145,6 +150,7 @@ def main():
     parser.add_argument("--output", required=True, type=absolute_path, help="new output Quiver path")
     parser.add_argument("--seed", required=True, type=int, help="seed used independently for each candidate")
     parser.add_argument("--gpu", help="physical CUDA device index or UUID (default uses CUDA visibility)")
+    parser.add_argument("--se3-exact", action="store_true", help="use the experimental FP32 SE(3) radial contractions")
     args = parser.parse_args()
     if not 0 <= args.seed < 2**32:
         parser.error("--seed must be in the NumPy seed range [0, 2**32)")

@@ -1,6 +1,36 @@
-# RFantibody
+# RFantibody RF2 optimizations
 
-See [UPLIFTING.md](UPLIFTING.md) for the RF2 consistency mode and local run instructions.
+This repository optimizes the antibody RoseTTAFold2 prediction and scoring stage from [RosettaCommons RFantibody](https://github.com/RosettaCommons/RFantibody). It skips unused auxiliary outputs, defers structure scoring to the selected recycle, and starts a fresh seeded process for each candidate. It retains the original FP32 matmul setting and 10 recycles.
+
+The default `opt/exact` branch contains the optimized code. `baseline/upstream` points to RFantibody commit `3e5a5bb1cb98befde9fc049ae3ff58cabb491f67`.
+
+## Quick start
+
+Use Linux with a compatible NVIDIA GPU and Python 3.10. Install from the pinned lockfile or activate an existing compatible RFantibody environment. Supply the original `RF2_ab.pt` checkpoint separately.
+
+```bash
+git clone --branch opt/exact https://github.com/Xiang-Leo/rfantibody-rf2-opt.git
+cd rfantibody-rf2-opt
+uv sync --locked --python 3.10
+.venv/bin/python uplifting/run_exact.py \
+  --pdb test/rf2/inputs_for_test/ab_proteinmpnn_output.pdb \
+  --weights /path/to/RF2_ab.pt --seed 0 --gpu 0 \
+  --output runs/rf2-example/result.qv
+```
+
+Use `--quiver candidates.qv` in place of `--pdb` to score multiple candidates in order. See the [run guide and checkpoint checksum](UPLIFTING.md) and the [upstream checkpoint source](https://github.com/RosettaCommons/RFantibody/blob/3e5a5bb1cb98befde9fc049ae3ff58cabb491f67/include/download_weights.sh).
+
+## Same-GPU validation
+
+| Fixture | Original | Optimized | Wall time reduction |
+| --- | ---: | ---: | ---: |
+| Short | 62.65 s | 56.73 s | 9.4% |
+| Typical | 74.13 s | 73.37 s | 1.0% observed |
+
+Each row is one timed pair on an RTX 4090 D, with two candidates per run and 11 forwards per candidate. Timing includes process startup and checkpoint loading. The four normalized Quiver records matched the corresponding originals. All recycle tensors checked, RNG states, and the selected recycle also matched for one short candidate. [Benchmark data](benchmarks/p4-summary.json)
+
+## Upstream RFantibody guide
+
 ### Structure-Based _de novo_ Antibody Design
 
 ![](https://github.com/RosettaCommons/RFantibody/blob/main/github_image.png)

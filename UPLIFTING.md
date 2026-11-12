@@ -22,4 +22,4 @@ The launcher follows the P4 Route A protocol. Each input record starts a fresh p
 
 P4 measured byte-identical RF2 Quiver output on its short and typical acceptance cases on the same RTX 4090D, with separate processes per candidate. The portable launcher was prepared from that protocol.
 
-The `main` branch points to the pristine upstream commit. The `opt/exact` branch contains the source changes and this launcher. The [P4 benchmark summary](benchmarks/p4-summary.json) records the inputs' sizes, wall times, and the scope of the output comparison. Use `python uplifting/compare_exact.py --help` for same-GPU comparisons against the baseline.
+The `baseline/upstream` branch points to the pristine upstream commit. The `opt/exact` branch contains the source changes and this launcher. The [P4 benchmark summary](benchmarks/p4-summary.json) records input sizes, wall times, and the scope of the comparison. Use `python uplifting/compare_exact.py --help` to compare artifacts after running both versions on the same GPU with the same inputs and settings.

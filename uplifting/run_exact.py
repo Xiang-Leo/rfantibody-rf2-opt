@@ -1,6 +1,7 @@
 """Run the RF2 exact mode, with an independent seeded process per candidate."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -79,17 +80,28 @@ def environment(gpu):
     return env
 
 
-def predict(work, ordinal, input_kind, input_path, tag, weights, seed, env):
+def predict(work, ordinal, input_kind, input_path, tag, weights, seed, env, *, recycles=10, long_options=None):
     result = work / "prediction.qv"
-    command = [
-        sys.executable, str(ROOT / "scripts/rf2_predict.py"),
+    command = [sys.executable]
+    if long_options is not None:
+        command.extend([str(ROOT / "uplifting/long_exact_worker.py"), "--recycles", str(recycles),
+                        "--report", str(work / f"report-{ordinal:06d}.json")])
+        if long_options.native_dir is not None:
+            command.extend(["--native-dir", str(long_options.native_dir)])
+        if long_options.long_exact_audit:
+            command.append("--audit")
+        command.append("--")
+    elif env.get("NABLOOP_RF2_SE3_EXACT") == "1":
+        command.append(str(ROOT / "uplifting/rf2_se3_exact.py"))
+    command.extend([
+        str(ROOT / "scripts/rf2_predict.py"),
         f"input.{input_kind}=${{oc.env:UPLIFTING_RF2_INPUT}}",
         "model.model_weights=${oc.env:UPLIFTING_RF2_WEIGHTS}",
         "output.quiver=prediction.qv", "output.output_intermediates=False",
-        "inference.num_recycles=10", "inference.hotspot_show_proportion=0.0",
+        f"inference.num_recycles={recycles}", "inference.hotspot_show_proportion=0.0",
         "inference.cautious=True", f"+inference.seed={seed}",
         "hydra.job.chdir=False", f"hydra.run.dir=hydra-{ordinal:06d}",
-    ]
+    ])
     # Pass external paths as literal resolver values. This keeps their spaces,
     # commas, or quotes out of Hydra's override grammar.
     subprocess.run(command, cwd=work, check=True, env=env | {
@@ -112,22 +124,38 @@ def run(args):
             raise ValueError(f"File does not exist: {path}")
     if os.path.lexists(args.output):
         raise ValueError(f"Choose a fresh output path: {args.output}")
+    if args.long_exact_report is not None and (
+        args.long_exact_report.resolve() == args.output.resolve() or os.path.lexists(args.long_exact_report)
+    ):
+        raise ValueError("Choose a fresh long-exact report path distinct from the Quiver output")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     env = environment(args.gpu)
+    if args.se3_exact:
+        env["NABLOOP_RF2_SE3_EXACT"] = "1"
+    long_options = args if args.long_exact or args.long_exact_audit else None
     with tempfile.TemporaryDirectory(prefix=".uplifting-rf2-", dir=args.output.parent) as directory:
         work = Path(directory)
         combined = work / "combined.qv"
         inputs = candidate_inputs(args.quiver, args.pdb, work / "input.qv")
         with combined.open("wb") as destination:
             for ordinal, (input_kind, input_path, tag) in enumerate(inputs, 1):
-                result = predict(work, ordinal, input_kind, input_path, tag, args.weights, args.seed, env)
+                result = predict(work, ordinal, input_kind, input_path, tag, args.weights, args.seed, env,
+                                 recycles=args.recycles, long_options=long_options)
                 with result.open("rb") as record:
                     shutil.copyfileobj(record, destination)
                 result.unlink()
         # The staging directory shares the destination filesystem. Publish in
         # one operation, with no replacement even if another run finished first.
         os.link(combined, args.output)
+        if args.long_exact_report is not None:
+            records = [json.loads(report.read_text()) for report in sorted(work.glob("report-*.json"))]
+            args.long_exact_report.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", dir=args.long_exact_report.parent) as report:
+                json.dump({"recycles": args.recycles, "candidates": records}, report, indent=2)
+                report.write("\n")
+                report.flush()
+                os.link(report.name, args.long_exact_report)
     print(f"Wrote {ordinal} RF2 prediction(s) to {args.output}")
 
 
@@ -144,10 +172,21 @@ def main():
     parser.add_argument("--weights", required=True, type=absolute_path, help="path to RF2_ab.pt")
     parser.add_argument("--output", required=True, type=absolute_path, help="new output Quiver path")
     parser.add_argument("--seed", required=True, type=int, help="seed used independently for each candidate")
+    parser.add_argument("--recycles", type=int, default=10, help="recycles per candidate (default: 10)")
     parser.add_argument("--gpu", help="physical CUDA device index or UUID (default uses CUDA visibility)")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--se3-exact", action="store_true", help="use the experimental FP32 SE(3) radial contractions")
+    modes.add_argument("--long-exact", action="store_true", help="use screened long-input FP32 kernels when supported")
+    modes.add_argument("--long-exact-audit", action="store_true", help="run additional byte checks on the long-exact path")
+    parser.add_argument("--native-dir", type=absolute_path, help="directory created by uplifting/build_exact.py")
+    parser.add_argument("--long-exact-report", type=absolute_path, help="new JSON path for per-candidate kernel counters")
     args = parser.parse_args()
     if not 0 <= args.seed < 2**32:
         parser.error("--seed must be in the NumPy seed range [0, 2**32)")
+    if args.recycles < 0:
+        parser.error("--recycles must be nonnegative")
+    if (args.native_dir is not None or args.long_exact_report is not None) and not (args.long_exact or args.long_exact_audit):
+        parser.error("--native-dir and --long-exact-report require --long-exact or --long-exact-audit")
     try:
         run(args)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:

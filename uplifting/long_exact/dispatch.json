@@ -1,0 +1,31 @@
+{
+  "torch": "2.3.1+cu118",
+  "cublaslt": 111103,
+  "linear": [
+    {"shape": [65536, 256, 64, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 15, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [65536, 256, 128, true, false], "layout": "nn", "algorithm": {"index": 0, "id": 20, "tile": 18, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 32, 64, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 17, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 64, 64, true, false], "layout": "nn", "algorithm": {"index": 0, "id": 20, "tile": 17, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 64, 128, true, false], "layout": "nn", "algorithm": {"index": 5, "id": 20, "tile": 23, "stages": 26, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 128, 64, true, false], "layout": "nn", "algorithm": {"index": 0, "id": 20, "tile": 17, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 128, 128, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 18, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 128, 256, true, true], "layout": "nn", "algorithm": {"index": 3, "id": 20, "tile": 24, "stages": 26, "workspace": 0, "info_status": 0}},
+    {"shape": [157609, 256, 128, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 18, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [1260006, 32, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1260006, 33, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1261129, 65, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1261129, 128, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1261129, 128, 64, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1261129, 128, 128, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 18, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [1261129, 128, 256, true, true], "layout": "nn", "algorithm": {"index": 3, "id": 20, "tile": 24, "stages": 26, "workspace": 0, "info_status": 0}},
+    {"shape": [1261129, 256, 128, true, false], "layout": "nn", "algorithm": {"index": 3, "id": 20, "tile": 20, "stages": 26, "workspace": 0, "info_status": 0}},
+    {"shape": [1262252, 32, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1262252, 33, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1263376, 128, 32, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1263376, 128, 64, true, false], "layout": "torch-packed", "algorithm": null},
+    {"shape": [1263376, 128, 128, true, false], "layout": "nn", "algorithm": {"index": 1, "id": 20, "tile": 18, "stages": 28, "workspace": 0, "info_status": 0}},
+    {"shape": [1263376, 128, 256, true, true], "layout": "nn", "algorithm": {"index": 3, "id": 20, "tile": 24, "stages": 26, "workspace": 0, "info_status": 0}},
+    {"shape": [1263376, 128, 384, false, false], "layout": "nn", "algorithm": {"index": 0, "id": 0, "tile": 18, "stages": 0, "workspace": 0, "info_status": 0}},
+    {"shape": [1263376, 256, 128, true, false], "layout": "nn", "algorithm": {"index": 3, "id": 20, "tile": 20, "stages": 26, "workspace": 0, "info_status": 0}}
+  ]
+}

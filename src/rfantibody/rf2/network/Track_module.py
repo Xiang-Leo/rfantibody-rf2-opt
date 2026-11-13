@@ -9,6 +9,14 @@ from rfantibody.rf2.network.kinematics import Qs2Rs, normQ
 from rfantibody.rf2.network.SE3_network import SE3TransformerWrapper
 from rfantibody.rf2.network.util_module import *
 
+
+REUSE_CA_RBF = False
+
+
+def ca_rbf_features(distance, position, idx, length, nc_cycle):
+    raw = rbf(distance).reshape(1, length, length, -1)
+    return raw, raw + position(idx, idx, 1, length, nc_cycle)
+
 # Components for three-track blocks
 # 1. MSA -> MSA update (biased attention. bias from pair & structure)
 # 2. Pair -> Pair update (biased attention. bias from structure)
@@ -529,7 +537,8 @@ class Str2Str(nn.Module):
         nn.init.zeros_(self.embed_edge2.bias)
     
     #@profile
-    def forward(self, msa, pair, R_in, T_in, xyz, state, idx_in, strides, top_k=64, eps=1e-5, nc_cycle=False):
+    def forward(self, msa, pair, R_in, T_in, xyz, state, idx_in, strides,
+                top_k=64, eps=1e-5, nc_cycle=False, *, ca_rbf=None):
         B, N, L = msa.shape[:3]
 
         dtype = msa.dtype
@@ -579,7 +588,9 @@ class Str2Str(nn.Module):
                     edge[:,rows[:,None],cols[None,:]] = self.norm_edge(edge_ij).to(msa.dtype)
         else:
             pair = self.norm_pair(pair)
-            rbf_feat = rbf(torch.cdist(xyz[:,:,1], xyz[:,:,1])).reshape(B,L,L,-1)
+            rbf_feat = ca_rbf
+            if rbf_feat is None:
+                rbf_feat = rbf(torch.cdist(xyz[:,:,1], xyz[:,:,1])).reshape(B,L,L,-1)
             rbf_feat = torch.cat((rbf_feat, seqsep), dim=-1)
             edge = self.embed_edge1(pair) + self.embed_edge2(rbf_feat)
             edge = edge + self.ff_edge(edge)
@@ -655,17 +666,34 @@ class IterBlock(nn.Module):
             STRIDE = strides['iter']
 
         xyzfull = xyz.view(1,B*L,3,3)
-        rbf_feat = torch.zeros((B,L,L,self.d_rbf), device=msa.device, dtype=msa.dtype)
-        for i in range((L-1)//STRIDE+1):
-            rows = torch.arange(i*STRIDE, min((i+1)*STRIDE, L), device=msa.device)
-            for j in range((L-1)//STRIDE+1):
-                cols = torch.arange(j*STRIDE, min((j+1)*STRIDE, L), device=msa.device)
-                NR, NC = rows.shape[0], cols.shape[0]
-                rbf_feat_ij = (
-                  rbf(torch.cdist(xyz[:,rows,1], xyz[:,cols,1])).reshape(B,NR,NC,-1)
-                  + self.pos(idx[:,rows],idx[:,cols], B, L, nc_cycle)
-                ).to(rbf_feat.dtype)
-                rbf_feat[:,rows[:,None],cols[None,:]] = rbf_feat_ij
+        ca_rbf = None
+        can_reuse = (
+            REUSE_CA_RBF and not use_checkpoint and STRIDE >= L
+            and (strides is None or not 0 < strides["str2str"] < L)
+            and xyz.is_cuda and xyz.dtype == msa.dtype == torch.float32
+            and not torch.is_grad_enabled() and not torch.is_autocast_enabled()
+            and not torch.is_autocast_cpu_enabled() and not torch.backends.cuda.matmul.allow_tf32
+        )
+        if can_reuse:
+            ca = xyz[:, :, 1].contiguous()
+            distance = torch.cdist(ca, ca)
+            if B == 1:
+                ca_rbf, rbf_feat = ca_rbf_features(distance, self.pos, idx, L, nc_cycle)
+            else:
+                ca_rbf = rbf(distance).reshape(B, L, L, -1)
+                rbf_feat = ca_rbf + self.pos(idx, idx, B, L, nc_cycle)
+        else:
+            rbf_feat = torch.zeros((B,L,L,self.d_rbf), device=msa.device, dtype=msa.dtype)
+            for i in range((L-1)//STRIDE+1):
+                rows = torch.arange(i*STRIDE, min((i+1)*STRIDE, L), device=msa.device)
+                for j in range((L-1)//STRIDE+1):
+                    cols = torch.arange(j*STRIDE, min((j+1)*STRIDE, L), device=msa.device)
+                    NR, NC = rows.shape[0], cols.shape[0]
+                    rbf_feat_ij = (
+                      rbf(torch.cdist(xyz[:,rows,1], xyz[:,cols,1])).reshape(B,NR,NC,-1)
+                      + self.pos(idx[:,rows],idx[:,cols], B, L, nc_cycle)
+                    ).to(rbf_feat.dtype)
+                    rbf_feat[:,rows[:,None],cols[None,:]] = rbf_feat_ij
 
         if use_checkpoint:
             msa = checkpoint.checkpoint(create_custom_forward(self.msa2msa), msa, pair, rbf_feat, state, strides, use_reentrant=True)
@@ -687,7 +715,7 @@ class IterBlock(nn.Module):
                 msa = msa.to(pair.device)
 
             R, T, state, alpha = self.str2str(
-                msa, pair, R_in, T_in, xyz, state, idx, strides, top_k=topk, nc_cycle=nc_cycle
+                msa, pair, R_in, T_in, xyz, state, idx, strides, top_k=topk, nc_cycle=nc_cycle, ca_rbf=ca_rbf
             ) 
 
         # update contacting subunits

@@ -25,6 +25,7 @@ scratch
 triton-cache/
 runs/
 local-data/
+uplifting/native-build/
 *.pt
 *.pth
 *.ckpt

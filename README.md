@@ -20,14 +20,17 @@ uv sync --locked --python 3.10
 
 Use `--quiver candidates.qv` in place of `--pdb` to score multiple candidates in order. See the [run guide and checkpoint checksum](UPLIFTING.md) and the [upstream checkpoint source](https://github.com/RosettaCommons/RFantibody/blob/3e5a5bb1cb98befde9fc049ae3ff58cabb491f67/include/download_weights.sh).
 
+Use `--long-exact` after building the native kernels to enable the screened FP32 stack on supported long inputs. [Build and run instructions](UPLIFTING.md#long-complexes)
+
 ## Same-GPU validation
 
 | Fixture | Original | Optimized | Wall time reduction |
 | --- | ---: | ---: | ---: |
 | Short | 62.65 s | 56.73 s | 9.4% |
 | Typical | 74.13 s | 73.37 s | 1.0% observed |
+| Long, fresh pair | 386.63 s | 190.39 s | 50.8% |
 
-Each row is one timed pair on an RTX 4090 D, with two candidates per run and 11 forwards per candidate. Timing includes process startup and checkpoint loading. The four normalized Quiver records matched the corresponding originals. All recycle tensors checked, RNG states, and the selected recycle also matched for one short candidate. [Benchmark data](benchmarks/p4-summary.json)
+Each row is one timed pair on an RTX 4090 D, with two candidates per run and 11 forwards per candidate. Timing includes process startup and checkpoint loading. The normalized Quiver records matched the corresponding originals. The short internal trace also matched the checked recycle tensors, RNG states, and selected recycle. [Short and typical benchmarks](benchmarks/p4-summary.json) · [Long benchmarks](benchmarks/long-exact-summary.json)
 
 ## Upstream RFantibody guide
 

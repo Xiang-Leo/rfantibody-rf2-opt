@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "upstream_commit": "3e5a5bb1cb98befde9fc049ae3ff58cabb491f67",
+  "runtime": {
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "torch": "2.3.1+cu118",
+    "triton": "2.3.1",
+    "cublaslt": 111103,
+    "matmul_dtype": "float32",
+    "matmul_allow_tf32": false
+  },
+  "workload": {
+    "antigen_residues": 893,
+    "complex_residues": [1123, 1124],
+    "candidates": 2,
+    "recycles_per_candidate": 10,
+    "forwards_per_candidate": 11,
+    "seeded_process_per_candidate": true
+  },
+  "trials": [
+    {
+      "original_wall_seconds": 387.09376760199666,
+      "optimized_wall_seconds": 192.83068036288023,
+      "speedup": 2.007428314174594,
+      "canonical_quiver_exact": true
+    },
+    {
+      "original_wall_seconds": 386.6290505900979,
+      "optimized_wall_seconds": 190.3941281363368,
+      "speedup": 2.030677386821729,
+      "canonical_quiver_exact": true
+    }
+  ],
+  "scope": "Same-GPU benchmark of the screened kernel stack. A short complex of 397 residues also passed the recorded internal trace check. Wall times include model process startup and checkpoint loading. Quiver canonicalization normalizes output tags."
+}

@@ -24,7 +24,7 @@ P4 measured byte-identical RF2 Quiver output on its short and typical acceptance
 
 ## Long complexes
 
-`--long-exact` enables the screened FP32 SE(3), pair and axial attention kernels. The stack uses SM89, PyTorch `2.3.1+cu118`, Triton `2.3.1`, and `nvidia-cublas-cu11==11.11.3.6` (cuBLASLt `111103`). Build with an SM89-capable CUDA toolkit (11.8 or newer) and a C++17 compiler.
+`--long-exact` enables the screened FP32 SE(3), pair and axial attention kernels. The stack targets RTX 4090 and RTX 4090 D (SM89) and uses PyTorch `2.3.1+cu118`, Triton `2.3.1`, and `nvidia-cublas-cu11==11.11.3.6` (cuBLASLt `111103`). Build with an SM89-capable CUDA toolkit (11.8 or newer) and a C++17 compiler.
 
 ```bash
 .venv/bin/python uplifting/build_exact.py --cuda-home /path/to/cuda

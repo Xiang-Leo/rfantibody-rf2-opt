@@ -1,6 +1,7 @@
 """The screened FP32 RF2 kernel stack for the pinned Ada runtime."""
 
 import ctypes
+from importlib.util import find_spec
 import os
 from pathlib import Path
 import platform
@@ -26,8 +27,9 @@ def unsupported_reason(torch, native_dir):
         return "requires Linux x86-64 and Python 3.10"
     if torch.__version__ != TORCH_VERSION:
         return f"requires PyTorch {TORCH_VERSION}"
-    if not torch.cuda.is_available() or torch.cuda.get_device_capability(0) != (8, 9):
-        return "requires a CUDA SM89 device"
+    if (not torch.cuda.is_available() or torch.cuda.get_device_capability(0) != (8, 9)
+            or torch.cuda.get_device_name(0) not in ("NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 4090 D")):
+        return "requires an RTX 4090 or RTX 4090 D"
     if torch.backends.cuda.matmul.allow_tf32 or torch.get_float32_matmul_precision() != "highest":
         return "requires the original FP32 matmul settings"
     try:
@@ -37,6 +39,8 @@ def unsupported_reason(torch, native_dir):
         return f"requires importable Triton {TRITON_VERSION} and its dependencies"
     if triton.__version__ != TRITON_VERSION or not hasattr(cache, "random"):
         return f"requires Triton {TRITON_VERSION}"
+    if find_spec("setuptools") is None:
+        return "requires setuptools for the pinned Triton compiler"
     try:
         for name in CUDA_SOURCES:
             api = ctypes.CDLL(str(native_dir / f"{name}_kernel.so"))
